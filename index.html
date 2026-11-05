@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Petit à Petit – Französisch lernen mit Karteikarten</title>
+  <meta name="description" content="Französisch-Vokabeln lernen mit Karteikarten nach dem Leitner-System – mit Startwortschatz, eigenen Karten und umschaltbarer Lernrichtung.">
+  <meta name="theme-color" content="#FFF7EE">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥐</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+
+    <!-- ===== Startseite ===== -->
+    <section id="view-home" class="view">
+      <header class="home-header">
+        <h1 class="logo">Petit <span>à</span> Petit</h1>
+        <div class="streak" title="Tage in Folge gelernt">
+          <span aria-hidden="true">🔥</span>
+          <strong id="streak-count">0</strong>
+          <span class="visually-hidden">Tage in Folge</span>
+        </div>
+      </header>
+
+      <div class="due-card">
+        <p class="due-label">Heute fällig</p>
+        <p class="due-number" id="due-count">0</p>
+        <p class="due-hint" id="due-hint"></p>
+      </div>
+
+      <h2 class="section-title">Deine Fächer</h2>
+      <div class="boxes" id="boxes"></div>
+
+      <h2 class="section-title">Kategorie</h2>
+      <div class="chips" id="category-chips"></div>
+
+      <h2 class="section-title">Richtung</h2>
+      <div class="toggle" role="group" aria-label="Lernrichtung">
+        <button type="button" class="toggle-btn" data-direction="fr-de">🇫🇷 → 🇩🇪</button>
+        <button type="button" class="toggle-btn" data-direction="de-fr">🇩🇪 → 🇫🇷</button>
+      </div>
+
+      <!-- Nur sichtbar, wenn das Gerät eine französische Stimme hat -->
+      <label class="switch-row" id="autospeak-row" hidden>
+        <span>🔊 Französisch automatisch vorlesen</span>
+        <input type="checkbox" class="switch" id="autospeak">
+      </label>
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-big" id="btn-start">Lernen</button>
+        <button type="button" class="btn btn-ghost" id="btn-manage">Karten verwalten</button>
+      </div>
+    </section>
+
+    <!-- ===== Lernsitzung ===== -->
+    <section id="view-study" class="view" hidden>
+      <header class="study-header">
+        <button type="button" class="icon-btn" id="btn-quit" aria-label="Lernen beenden">✕</button>
+        <div class="progress" aria-hidden="true"><div class="progress-bar" id="progress-bar"></div></div>
+        <span class="progress-text" id="progress-text">0/0</span>
+      </header>
+
+      <p class="practice-badge" id="practice-badge" hidden>Freies Üben – deine Fächer bleiben unverändert</p>
+
+      <div class="card-stage">
+        <button type="button" class="flashcard" id="flashcard" aria-label="Karte umdrehen">
+          <span class="card-inner">
+            <span class="card-face card-front">
+              <span class="card-lang" id="front-lang"></span>
+              <span class="card-word" id="front-word"></span>
+              <span class="card-tap">Tippen zum Umdrehen</span>
+            </span>
+            <span class="card-face card-back">
+              <span class="card-lang" id="back-lang"></span>
+              <span class="card-word" id="back-word"></span>
+              <span class="card-question">Gewusst?</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="speak-btn" id="btn-speak" aria-label="Französisch vorlesen" hidden>🔊</button>
+      </div>
+
+      <p class="card-meta" id="card-meta"></p>
+
+      <div class="answer-buttons" id="answer-buttons">
+        <button type="button" class="btn btn-wrong" id="btn-wrong">✗ Nicht gewusst</button>
+        <button type="button" class="btn btn-right" id="btn-right">✓ Gewusst</button>
+      </div>
+      <p class="key-hint">Tastatur: Leertaste = umdrehen · ← nicht gewusst · → gewusst · S = vorlesen</p>
+    </section>
+
+    <!-- ===== Ergebnis ===== -->
+    <section id="view-result" class="view result" hidden>
+      <div class="result-emoji" id="result-emoji">🎉</div>
+      <h2 class="result-title" id="result-title">Geschafft!</h2>
+      <p class="result-text" id="result-text"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-big" id="btn-continue" hidden>Weiterlernen</button>
+        <button type="button" class="btn btn-ghost" id="btn-home">Zur Übersicht</button>
+      </div>
+    </section>
+
+    <!-- ===== Karten verwalten ===== -->
+    <section id="view-manage" class="view" hidden>
+      <header class="manage-header">
+        <button type="button" class="icon-btn" id="btn-back" aria-label="Zurück zur Übersicht">←</button>
+        <h2 class="manage-title">Karten <span id="card-total"></span></h2>
+        <button type="button" class="btn btn-primary btn-small" id="btn-add">+ Neu</button>
+      </header>
+
+      <input type="search" class="search" id="search" placeholder="Suchen …" aria-label="Karten durchsuchen">
+
+      <ul class="card-list" id="card-list"></ul>
+      <p class="empty-list" id="empty-list" hidden>Keine Karten gefunden.</p>
+
+      <div class="backup">
+        <h3 class="section-title">Backup</h3>
+        <p class="backup-text">Deine Daten liegen nur in diesem Browser. Exportiere sie ab und zu als Sicherung – oder um sie auf ein anderes Gerät zu übertragen.</p>
+        <div class="backup-buttons">
+          <button type="button" class="btn btn-ghost btn-small" id="btn-export">⬇ Exportieren</button>
+          <label class="btn btn-ghost btn-small" for="import-file">⬆ Importieren</label>
+          <input type="file" id="import-file" accept="application/json,.json" hidden>
+        </div>
+        <button type="button" class="link-danger" id="btn-reset">Alles auf Startpaket zurücksetzen</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== Dialog: Karte anlegen / bearbeiten ===== -->
+  <dialog class="dialog" id="card-dialog">
+    <form id="card-form">
+      <h3 class="dialog-title" id="dialog-title">Neue Karte</h3>
+      <label class="field">
+        <span>Französisch</span>
+        <input type="text" id="input-fr" required autocomplete="off" autocapitalize="off" lang="fr">
+      </label>
+      <label class="field">
+        <span>Deutsch</span>
+        <input type="text" id="input-de" required autocomplete="off" autocapitalize="off">
+      </label>
+      <label class="field">
+        <span>Kategorie</span>
+        <input type="text" id="input-category" list="category-list" required autocomplete="off" placeholder="z. B. Alltag">
+        <datalist id="category-list"></datalist>
+      </label>
+      <div class="dialog-buttons">
+        <button type="button" class="btn btn-ghost" id="btn-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="cards.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
