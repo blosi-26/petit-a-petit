@@ -29,6 +29,12 @@
         <p class="due-hint" id="due-hint"></p>
       </div>
 
+      <!-- Erscheint nur, wenn neben der App eine Datei vokabeln_franzoesisch.csv liegt -->
+      <div class="import-banner" id="duolingo-import" hidden>
+        <p><strong>📥 Duolingo-Wortschatz gefunden</strong><br><span id="duolingo-count">0</span> neue Karten bereit</p>
+        <button type="button" class="btn btn-primary btn-small" id="btn-duolingo">Importieren</button>
+      </div>
+
       <h2 class="section-title">Deine Fächer</h2>
       <div class="boxes" id="boxes"></div>
 
@@ -122,6 +128,11 @@
           <label class="btn btn-ghost btn-small" for="import-file">⬆ Importieren</label>
           <input type="file" id="import-file" accept="application/json,.json" hidden>
         </div>
+
+        <h3 class="section-title">Wortliste importieren</h3>
+        <p class="backup-text">CSV-Datei mit den Spalten <em>Französisch; Deutsch</em> und optional <em>Kategorie</em>. Vorhandene Karten werden übersprungen, dein Fortschritt bleibt erhalten.</p>
+        <label class="btn btn-ghost btn-small" for="import-csv">📄 CSV importieren</label>
+        <input type="file" id="import-csv" accept=".csv,text/csv,text/plain" hidden>
         <button type="button" class="link-danger" id="btn-reset">Alles auf Startpaket zurücksetzen</button>
       </div>
     </section>

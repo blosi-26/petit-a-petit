@@ -249,7 +249,7 @@ function renderChips() {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chip';
-    chip.textContent = cat === 'all' ? 'Alle' : cat;
+    chip.textContent = cat === 'all' ? '🔀 Alle gemischt' : cat;
     chip.classList.toggle('is-active', state.settings.category === cat);
     chip.addEventListener('click', () => {
       state.settings.category = cat;
@@ -624,17 +624,140 @@ $('import-file').addEventListener('change', async (e) => {
     state = imported;
     saveState();
     renderManage();
+    checkDuolingoFile();
     showToast('Backup importiert ✅');
   } catch (err) {
     showToast('⚠️ Diese Datei ist kein gültiges Backup');
   }
 });
 
+/* ----- CSV-Import (z. B. Wortliste aus Duolingo) ----- */
+const NEW_CARDS_PER_DAY = 20;                   // neue Karten werden auf mehrere Tage verteilt
+const DUOLINGO_FILE = 'vokabeln_franzoesisch.csv'; // liegt im selben Ordner wie index.html
+
+// Zerlegt CSV-Text in Zeilen und Spalten. Versteht ; oder , als Trenner und "Anführungszeichen".
+function parseCSV(text) {
+  text = text.replace(/^﻿/, ''); // Excel-BOM entfernen
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const count = (ch) => firstLine.split(ch).length - 1;
+  const delimiter = count(';') >= count(',') ? ';' : ',';
+
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; } // "" = ein Anführungszeichen
+      else if (ch === '"') inQuotes = false;
+      else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      row.push(field);
+      field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function csvToCards(text, defaultCategory) {
+  const rows = parseCSV(text)
+    .map((r) => r.map((cell) => cell.trim()))
+    .filter((r) => r.length >= 2 && r[0] && r[1]);
+  // Kopfzeile wie "Französisch;Deutsch" überspringen
+  if (rows.length && /franz|french|fran[cç]ais/i.test(rows[0][0])) rows.shift();
+  return rows.map(([fr, de, category]) => ({ fr, de, category: category || defaultCategory }));
+}
+
+// "le petit-déjeuner" und "Le petit déjeuner" gelten als dieselbe Karte
+const cardKey = (fr) => simplify(fr).replace(/[-\s]+/g, ' ').trim();
+
+function onlyNewCards(list) {
+  const known = new Set(state.cards.map((c) => cardKey(c.fr)));
+  return list.filter((c) => {
+    const key = cardKey(c.fr);
+    if (known.has(key)) return false;
+    known.add(key);
+    return true;
+  });
+}
+
+function importCards(list) {
+  const fresh = onlyNewCards(list);
+  const skipped = list.length - fresh.length;
+  if (fresh.length === 0) {
+    showToast('Alle Karten sind schon vorhanden');
+    return;
+  }
+
+  const days = Math.ceil(fresh.length / NEW_CARDS_PER_DAY);
+  let message = `${fresh.length} neue Karten importieren?`;
+  if (skipped) message += `\n${skipped} sind schon vorhanden und werden übersprungen.`;
+  if (days > 1) message += `\n\nDamit es nicht zu viel auf einmal wird, werden sie über ${days} Tage verteilt (${NEW_CARDS_PER_DAY} pro Tag).`;
+  if (!confirm(message)) return;
+
+  fresh.forEach((c, i) => {
+    const card = newCard(c.fr, c.de, c.category);
+    card.due = todayStr(Math.floor(i / NEW_CARDS_PER_DAY));
+    state.cards.push(card);
+  });
+  saveState();
+  renderHome();
+  if (!views.manage.hidden) renderManage();
+  checkDuolingoFile();
+  showToast(`${fresh.length} Karten importiert ✅`);
+}
+
+$('import-csv').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const cards = csvToCards(await file.text(), 'Importiert');
+  if (cards.length === 0) {
+    showToast('⚠️ Keine Karten in der Datei gefunden');
+    return;
+  }
+  importCards(cards);
+});
+
+// Liegt die Duolingo-Liste auf dem Server, bietet die Startseite den Import an
+let duolingoCards = [];
+
+async function checkDuolingoFile() {
+  const banner = $('duolingo-import');
+  try {
+    const res = await fetch(DUOLINGO_FILE, { cache: 'no-store' });
+    if (!res.ok) throw new Error('nicht gefunden');
+    // Duolingo listet die neuesten Wörter zuerst – umdrehen, damit die Grundlagen vorne stehen
+    duolingoCards = csvToCards(await res.text(), 'Duolingo').reverse();
+    const count = onlyNewCards(duolingoCards).length;
+    $('duolingo-count').textContent = count;
+    banner.hidden = count === 0;
+  } catch (err) {
+    banner.hidden = true; // z. B. lokal per Doppelklick geöffnet oder Datei nicht vorhanden
+  }
+}
+
+$('btn-duolingo').addEventListener('click', () => importCards(duolingoCards));
+
 $('btn-reset').addEventListener('click', () => {
   if (!confirm('Alle eigenen Karten und den gesamten Lernfortschritt löschen und mit dem Startpaket neu beginnen?')) return;
   state = createInitialState();
   saveState();
   renderManage();
+  checkDuolingoFile();
   showToast('Zurückgesetzt');
 });
 
@@ -730,3 +853,4 @@ if (speechSupported) {
    Start
    ========================================================= */
 renderHome();
+checkDuolingoFile();
