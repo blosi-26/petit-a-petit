@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Petit à Petit – Französisch lernen mit Karteikarten</title>
-  <meta name="description" content="Französisch-Vokabeln lernen mit Karteikarten nach dem Leitner-System – mit Startwortschatz, eigenen Karten und umschaltbarer Lernrichtung.">
+  <title>Petit à Petit – Vokabeln lernen mit Karteikarten</title>
+  <meta name="description" content="Französisch- und Business-English-Vokabeln lernen mit Karteikarten nach dem Leitner-System – mit Startwortschatz, eigenen Karten und Aussprache.">
   <meta name="theme-color" content="#FFF7EE">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥐</text></svg>">
   <link rel="stylesheet" href="style.css">
@@ -23,16 +23,19 @@
         </div>
       </header>
 
+      <!-- Stapel-Umschalter (wird aus cards.js erzeugt) -->
+      <div class="deck-switch" id="deck-switch" role="group" aria-label="Stapel wählen"></div>
+
       <div class="due-card">
         <p class="due-label">Heute fällig</p>
         <p class="due-number" id="due-count">0</p>
         <p class="due-hint" id="due-hint"></p>
       </div>
 
-      <!-- Erscheint nur, wenn neben der App eine Datei vokabeln_franzoesisch.csv liegt -->
-      <div class="import-banner" id="duolingo-import" hidden>
-        <p><strong>📥 Duolingo-Wortschatz gefunden</strong><br><span id="duolingo-count">0</span> neue Karten bereit</p>
-        <button type="button" class="btn btn-primary btn-small" id="btn-duolingo">Importieren</button>
+      <!-- Erscheint nur, wenn für den Stapel eine Wortliste (CSV) im Repo liegt -->
+      <div class="import-banner" id="file-import" hidden>
+        <p><strong id="file-import-title">📥 Wortliste gefunden</strong><br><span id="file-import-count">0</span> neue Karten bereit</p>
+        <button type="button" class="btn btn-primary btn-small" id="btn-file-import">Importieren</button>
       </div>
 
       <h2 class="section-title">Deine Fächer</h2>
@@ -43,13 +46,13 @@
 
       <h2 class="section-title">Richtung</h2>
       <div class="toggle" role="group" aria-label="Lernrichtung">
-        <button type="button" class="toggle-btn" data-direction="fr-de">🇫🇷 → 🇩🇪</button>
-        <button type="button" class="toggle-btn" data-direction="de-fr">🇩🇪 → 🇫🇷</button>
+        <button type="button" class="toggle-btn" data-direction="foreign-de" id="dir-foreign-de"></button>
+        <button type="button" class="toggle-btn" data-direction="de-foreign" id="dir-de-foreign"></button>
       </div>
 
-      <!-- Nur sichtbar, wenn das Gerät eine französische Stimme hat -->
+      <!-- Nur sichtbar, wenn das Gerät eine Stimme für die Sprache des Stapels hat -->
       <label class="switch-row" id="autospeak-row" hidden>
-        <span>🔊 Französisch automatisch vorlesen</span>
+        <span>🔊 Automatisch vorlesen</span>
         <input type="checkbox" class="switch" id="autospeak">
       </label>
 
@@ -84,7 +87,7 @@
             </span>
           </span>
         </button>
-        <button type="button" class="speak-btn" id="btn-speak" aria-label="Französisch vorlesen" hidden>🔊</button>
+        <button type="button" class="speak-btn" id="btn-speak" aria-label="Vorlesen" hidden>🔊</button>
       </div>
 
       <p class="card-meta" id="card-meta"></p>
@@ -107,11 +110,11 @@
       </div>
     </section>
 
-    <!-- ===== Karten verwalten ===== -->
+    <!-- ===== Karten verwalten (immer für den aktiven Stapel) ===== -->
     <section id="view-manage" class="view" hidden>
       <header class="manage-header">
         <button type="button" class="icon-btn" id="btn-back" aria-label="Zurück zur Übersicht">←</button>
-        <h2 class="manage-title">Karten <span id="card-total"></span></h2>
+        <h2 class="manage-title"><span id="manage-flag"></span> Karten <span class="manage-count" id="card-total"></span></h2>
         <button type="button" class="btn btn-primary btn-small" id="btn-add">+ Neu</button>
       </header>
 
@@ -121,7 +124,19 @@
       <p class="empty-list" id="empty-list" hidden>Keine Karten gefunden.</p>
 
       <div class="backup">
-        <h3 class="section-title">Backup</h3>
+        <h3 class="section-title">Wortliste importieren</h3>
+        <p class="backup-text">CSV-Datei mit den Spalten <em><span id="csv-lang">Fremdsprache</span>; Deutsch</em> und optional <em>Kategorie</em>. Die Karten landen im Stapel <strong id="csv-deck"></strong>. Vorhandene Karten werden übersprungen, dein Fortschritt bleibt erhalten.</p>
+        <label class="btn btn-ghost btn-small" for="import-csv">📄 CSV importieren</label>
+        <input type="file" id="import-csv" accept=".csv,text/csv,text/plain" hidden>
+
+        <h3 class="section-title">Kategorie löschen</h3>
+        <p class="backup-text">Praktisch, um einen Import rückgängig zu machen. Löscht alle Karten der Kategorie samt Fortschritt.</p>
+        <div class="backup-buttons">
+          <select class="select" id="delete-category" aria-label="Kategorie zum Löschen"></select>
+          <button type="button" class="btn btn-ghost btn-small" id="btn-delete-category">🗑️ Löschen</button>
+        </div>
+
+        <h3 class="section-title">Backup (alle Stapel)</h3>
         <p class="backup-text">Deine Daten liegen nur in diesem Browser. Exportiere sie ab und zu als Sicherung – oder um sie auf ein anderes Gerät zu übertragen.</p>
         <div class="backup-buttons">
           <button type="button" class="btn btn-ghost btn-small" id="btn-export">⬇ Exportieren</button>
@@ -129,11 +144,7 @@
           <input type="file" id="import-file" accept="application/json,.json" hidden>
         </div>
 
-        <h3 class="section-title">Wortliste importieren</h3>
-        <p class="backup-text">CSV-Datei mit den Spalten <em>Französisch; Deutsch</em> und optional <em>Kategorie</em>. Vorhandene Karten werden übersprungen, dein Fortschritt bleibt erhalten.</p>
-        <label class="btn btn-ghost btn-small" for="import-csv">📄 CSV importieren</label>
-        <input type="file" id="import-csv" accept=".csv,text/csv,text/plain" hidden>
-        <button type="button" class="link-danger" id="btn-reset">Alles auf Startpaket zurücksetzen</button>
+        <button type="button" class="link-danger" id="btn-reset">Diesen Stapel auf Startpaket zurücksetzen</button>
       </div>
     </section>
   </main>
@@ -143,12 +154,12 @@
     <form id="card-form">
       <h3 class="dialog-title" id="dialog-title">Neue Karte</h3>
       <label class="field">
-        <span>Französisch</span>
-        <input type="text" id="input-fr" required autocomplete="off" autocapitalize="off" lang="fr">
+        <span id="label-front">Fremdsprache</span>
+        <input type="text" id="input-front" required autocomplete="off" autocapitalize="off">
       </label>
       <label class="field">
         <span>Deutsch</span>
-        <input type="text" id="input-de" required autocomplete="off" autocapitalize="off">
+        <input type="text" id="input-back" required autocomplete="off" autocapitalize="off" lang="de">
       </label>
       <label class="field">
         <span>Kategorie</span>

@@ -1,48 +1,62 @@
 # Petit à Petit 🥐
 
-Eine Karteikarten-App zum Französischlernen nach dem Leitner-System.
-Sie läuft komplett im Browser, ohne Server und ohne Datenbank.
+Eine Karteikarten-App zum Vokabellernen nach dem Leitner-System, mit **Stapeln** für
+🇫🇷 Französisch und 🇬🇧 Business English. Sie läuft komplett im Browser, ohne Server und ohne Datenbank.
 
 ## Funktionen
-- 50 Startkarten in 5 Kategorien, eigene Karten anlegen, bearbeiten und löschen
+- **Stapel-Umschalter** oben auf der Startseite. Fächer, Kategorien, Import und Kartenverwaltung gelten jeweils für den gewählten Stapel.
+  Das rote Abzeichen zeigt, wie viele Karten im Stapel heute fällig sind.
+- Je 50 Startkarten: Französisch (Grundwortschatz) und Business English (Meetings, E-Mails, Telefon, Präsentation, Verhandlung)
 - Leitner-System mit 5 Fächern (Wiederholung nach 1, 2, 4, 8 und 16 Tagen)
-- Lernrichtung umschaltbar: 🇫🇷 → 🇩🇪 oder 🇩🇪 → 🇫🇷
+- Lernrichtung umschaltbar: Fremdsprache → Deutsch oder Deutsch → Fremdsprache
 - Höchstens 20 Karten pro Runde; nicht gewusste Karten kommen am Ende noch einmal
-- Aussprache 🔊 über die eingebaute Sprachausgabe des Geräts, auf Wunsch automatisch.
-  Erscheint nur, wenn das Gerät eine französische Stimme hat. Fehlt sie, lässt sie sich meist in den Systemeinstellungen nachladen
-  (iPhone: *Einstellungen → Bedienungshilfen → Gesprochene Inhalte → Stimmen → Französisch*).
-- Tagesserie 🔥, Fächer-Übersicht, freies Üben, wenn nichts fällig ist
-- Backup als JSON-Datei (Export/Import)
+- **Aussprache** 🔊 über die eingebaute Sprachausgabe des Geräts, je Stapel in der passenden Sprache.
+  Erscheint nur, wenn das Gerät eine passende Stimme hat. Fehlt sie, lässt sie sich meist nachladen
+  (iPhone: *Einstellungen → Bedienungshilfen → Gesprochene Inhalte → Stimmen*).
+- Tagesserie 🔥 (gemeinsam für alle Stapel), freies Üben, wenn nichts fällig ist
+- **Kategorie löschen**, z. B. um einen Import rückgängig zu machen
+- Backup aller Stapel als JSON-Datei (Export/Import)
+
+## Neue Vokabeln importieren
+Importiert wird immer **in den gerade gewählten Stapel**. Dubletten prüft die App je Stapel, neue Karten werden auf 20 pro Tag verteilt.
+
+**Variante A – CSV-Datei auswählen:** *Karten verwalten → CSV importieren*.
+Format: `Fremdsprache;Deutsch;Kategorie` (die Kategorie ist optional, `;` oder `,` als Trenner, eine Kopfzeile ist erlaubt).
+
+**Variante B – Wortliste im Repo:** Liegt eine der folgenden Dateien neben `index.html`, zeigt die Startseite des passenden Stapels
+einen Import-Hinweis an:
+
+| Stapel | Dateiname | Kategorie beim Import |
+|---|---|---|
+| 🇫🇷 Französisch | `vokabeln_franzoesisch.csv` | Duolingo |
+| 🇬🇧 Business English | `vokabeln_englisch.csv` | Wortliste |
+
+Neue Wörter in der CSV ergänzen und erneut hochladen; der Hinweis erscheint dann nur für die neuen Wörter.
 
 ## Dateien
 | Datei | Aufgabe |
 |---|---|
 | `index.html` | Aufbau aller Ansichten und des Karten-Dialogs |
 | `style.css` | Design und Animationen, für das Handy optimiert |
-| `cards.js` | Startpaket – hier können Sie die 50 Startkarten anpassen |
-| `script.js` | Logik: Speichern, Leitner-System, Lernsitzung, Verwaltung, Backup |
+| `cards.js` | Die Stapel: Name, Flagge, Sprache, Startkarten. Ein weiterer Stapel (z. B. Spanisch) = ein weiterer Eintrag. |
+| `script.js` | Logik: Speichern, Leitner-System, Lernsitzung, Verwaltung, Import, Aussprache |
+| `vokabeln_franzoesisch.csv` | Ihre Duolingo-Wortliste (optional) |
 
 ## Lokal ausprobieren
-Einfach `index.html` per Doppelklick im Browser öffnen.
+`index.html` per Doppelklick im Browser öffnen. Der Import-Hinweis aus Variante B funktioniert nur online, also auf GitHub Pages.
 
 ## Auf GitHub Pages veröffentlichen
-1. Auf [github.com](https://github.com) anmelden und oben rechts **+ → New repository** wählen.
-2. Einen Namen vergeben, z. B. `petit-a-petit`, **Public** auswählen und **Create repository** klicken.
-3. Auf der leeren Repo-Seite **uploading an existing file** anklicken, alle vier Dateien
-   (`index.html`, `style.css`, `cards.js`, `script.js`) und diese README hineinziehen und **Commit changes** klicken.
-4. Im Repo auf **Settings → Pages** gehen. Unter *Build and deployment* bei **Source** „Deploy from a branch“ wählen,
-   als **Branch** `main` und als Ordner `/ (root)` einstellen und dann **Save** klicken.
-5. Nach etwa einer Minute erscheint oben die Adresse, z. B. `https://IHR-NAME.github.io/petit-a-petit/`.
+1. Auf [github.com](https://github.com) ein Repository anlegen (z. B. `petit-a-petit`, **Public**).
+2. **Add file → Upload files**, alle Dateien hineinziehen und dann **Commit changes** klicken.
+3. **Settings → Pages**: Source „Deploy from a branch“, Branch `main`, Ordner `/ (root)` einstellen und **Save** klicken.
+4. Nach etwa einer Minute ist die App unter `https://IHR-NAME.github.io/petit-a-petit/` erreichbar.
 
-Wenn Sie später Dateien ändern, laden Sie sie einfach erneut hoch. GitHub Pages aktualisiert die Seite automatisch.
-
-**Tipp fürs Handy:** Die Seite im Browser öffnen und über *Teilen → Zum Home-Bildschirm* (iPhone)
-bzw. *⋮ → Zum Startbildschirm hinzufügen* (Android) wie eine App ablegen.
+Am iPhone die Adresse in Safari öffnen und über *Teilen → Zum Home-Bildschirm* wie eine App ablegen.
 
 ## Wichtig zu den Daten
 - Alles wird im **localStorage des jeweiligen Browsers** gespeichert. Handy und Rechner haben deshalb getrennte Stände.
-- Wenn Sie die Browserdaten löschen oder im privaten Modus surfen, ist der Fortschritt weg.
-  Erstellen Sie deshalb ab und zu unter **Karten verwalten → Exportieren** ein Backup.
-- Über Export auf Gerät A und Import auf Gerät B lässt sich der Stand übertragen.
-- Änderungen an `cards.js` wirken nur bei einem neuen Start, also in einem frischen Browser
-  oder nach **Alles auf Startpaket zurücksetzen**.
+  Über *Exportieren* auf Gerät A und *Importieren* auf Gerät B lässt sich der Stand übertragen.
+- Wenn Sie die Browserdaten löschen oder im privaten Modus surfen, ist der Fortschritt weg. Erstellen Sie deshalb ab und zu ein Backup.
+- Bei einem Update wandelt die App alte Daten automatisch um. Fortschritt, Kategorien und Serie bleiben erhalten,
+  und ein neuer Stapel bekommt einmalig sein Startpaket.
+- Änderungen an den Startkarten in `cards.js` wirken nur für neue Stapel oder nach *Diesen Stapel auf Startpaket zurücksetzen*.

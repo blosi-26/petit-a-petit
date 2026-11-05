@@ -7,10 +7,11 @@ const STORAGE_KEY = 'petit-a-petit-v1';
 const INTERVALS = [1, 2, 4, 8, 16]; // Tage bis zur nächsten Abfrage je Fach (Fach 1–5)
 const SESSION_SIZE = 20;            // max. Karten pro Lernsitzung
 const PRACTICE_SIZE = 10;           // Karten beim freien Üben
+const NEW_CARDS_PER_DAY = 20;       // importierte Karten werden auf mehrere Tage verteilt
 const ANIMATION_MS = 300;           // muss zur CSS-Animation .leave-* passen
 
 /* =========================================================
-   Datums-Hilfen (lokales Datum als "JJJJ-MM-TT")
+   Hilfsfunktionen
    ========================================================= */
 function toDateStr(date) {
   const y = date.getFullYear();
@@ -30,59 +31,107 @@ function formatDate(dateStr) {
   return new Date(y, m - 1, d).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-/* =========================================================
-   Daten: Laden, Speichern, Prüfen
-   ========================================================= */
 function makeId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function newCard(fr, de, category) {
-  return { id: makeId(), fr, de, category, box: 1, due: todayStr() };
+function shuffle(array) {
+  const a = [...array];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Für Suche und Dublettenprüfung: Groß-/Kleinschreibung und Akzente ignorieren ("cafe" findet "café")
+const simplify = (text) => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// "le petit-déjeuner" und "Le petit déjeuner" gelten als dieselbe Karte
+const cardKey = (text) => simplify(text).replace(/[-\s]+/g, ' ').trim();
+
+const deckById = (id) => DECKS.find((d) => d.id === id) || DECKS[0];
+
+/* =========================================================
+   Daten: Laden, Speichern, Prüfen
+   Eine Karte: { id, deck, front (Fremdsprache), back (Deutsch), category, box, due }
+   ========================================================= */
+function newCard(deckId, front, back, category) {
+  return { id: makeId(), deck: deckId, front, back, category, box: 1, due: todayStr() };
+}
+
+function starterCards(deck) {
+  return deck.cards.map((c) => newCard(deck.id, c.front, c.back, c.category));
 }
 
 function createInitialState() {
   return {
-    cards: STARTER_CARDS.map((c) => newCard(c.fr, c.de, c.category)),
-    settings: { direction: 'fr-de', category: 'all', autoSpeak: false },
+    version: 2,
+    cards: DECKS.flatMap(starterCards),
+    initializedDecks: DECKS.map((d) => d.id),
+    settings: { deck: DECKS[0].id, direction: 'foreign-de', autoSpeak: false, categories: {} },
     streak: { count: 0, lastDate: null },
   };
 }
 
-// Prüft gespeicherte oder importierte Daten und ergänzt fehlende Werte.
+// Prüft gespeicherte oder importierte Daten, ergänzt fehlende Werte und
+// übernimmt das alte Format (nur Französisch, Felder fr/de) automatisch.
 // Gibt null zurück, wenn die Daten unbrauchbar sind.
 function normalizeState(data) {
   if (!data || !Array.isArray(data.cards)) return null;
+  const deckIds = DECKS.map((d) => d.id);
+  const isOldFormat = data.version !== 2;
 
   const cards = [];
   for (const c of data.cards) {
-    if (!c || typeof c.fr !== 'string' || typeof c.de !== 'string') return null;
-    const box = Number.isInteger(c.box) && c.box >= 1 && c.box <= INTERVALS.length ? c.box : 1;
-    const due = typeof c.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.due) ? c.due : todayStr();
+    if (!c) return null;
+    const front = typeof c.front === 'string' ? c.front : c.fr;
+    const back = typeof c.back === 'string' ? c.back : c.de;
+    if (typeof front !== 'string' || typeof back !== 'string') return null;
     cards.push({
       id: typeof c.id === 'string' && c.id ? c.id : makeId(),
-      fr: c.fr.trim(),
-      de: c.de.trim(),
+      deck: deckIds.includes(c.deck) ? c.deck : DECKS[0].id,
+      front: front.trim(),
+      back: back.trim(),
       category: typeof c.category === 'string' && c.category.trim() ? c.category.trim() : 'Eigene',
-      box,
-      due,
+      box: Number.isInteger(c.box) && c.box >= 1 && c.box <= INTERVALS.length ? c.box : 1,
+      due: typeof c.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.due) ? c.due : todayStr(),
     });
   }
 
-  const settings = data.settings || {};
+  const s = data.settings || {};
+  const categories = s.categories && typeof s.categories === 'object' ? { ...s.categories } : {};
+  if (isOldFormat && typeof s.category === 'string') categories[DECKS[0].id] = s.category;
+
   const streak = data.streak || {};
-  return {
+  const state = {
+    version: 2,
     cards,
+    initializedDecks: Array.isArray(data.initializedDecks)
+      ? data.initializedDecks.filter((id) => deckIds.includes(id))
+      : [DECKS[0].id], // altes Format: nur der Französisch-Stapel existierte
     settings: {
-      direction: settings.direction === 'de-fr' ? 'de-fr' : 'fr-de',
-      category: typeof settings.category === 'string' ? settings.category : 'all',
-      autoSpeak: settings.autoSpeak === true,
+      deck: deckIds.includes(s.deck) ? s.deck : DECKS[0].id,
+      direction: s.direction === 'de-foreign' || s.direction === 'de-fr' ? 'de-foreign' : 'foreign-de',
+      autoSpeak: s.autoSpeak === true,
+      categories,
     },
     streak: {
       count: Number.isInteger(streak.count) ? streak.count : 0,
       lastDate: typeof streak.lastDate === 'string' ? streak.lastDate : null,
     },
   };
+  addMissingDecks(state);
+  return state;
+}
+
+// Neue Stapel (z. B. nach einem Update) bekommen einmalig ihr Startpaket
+function addMissingDecks(s) {
+  DECKS.forEach((deck) => {
+    if (s.initializedDecks.includes(deck.id)) return;
+    s.cards.push(...starterCards(deck));
+    s.initializedDecks.push(deck.id);
+  });
 }
 
 function loadState() {
@@ -107,31 +156,30 @@ function saveState() {
 }
 
 let state = loadState();
-saveState(); // beim ersten Start das Startpaket sofort sichern
+saveState(); // Startpaket bzw. umgestellte Daten sofort sichern
 
 /* =========================================================
-   Abfragen auf die Karten
+   Abfragen (immer bezogen auf den aktiven Stapel)
    ========================================================= */
+const activeDeck = () => deckById(state.settings.deck);
+const deckCards = () => state.cards.filter((c) => c.deck === state.settings.deck);
 const isDue = (card) => card.due <= todayStr();
 const findCard = (id) => state.cards.find((c) => c.id === id);
+const foreignFirst = () => state.settings.direction === 'foreign-de';
+
+function selectedCategory() {
+  return state.settings.categories[state.settings.deck] || 'all';
+}
 
 function getCategories() {
   // Reihenfolge des ersten Auftretens beibehalten
-  return [...new Set(state.cards.map((c) => c.category))];
+  return [...new Set(deckCards().map((c) => c.category))];
 }
 
 function cardsInSelectedCategory() {
-  const cat = state.settings.category;
-  return cat === 'all' ? state.cards : state.cards.filter((c) => c.category === cat);
-}
-
-function shuffle(array) {
-  const a = [...array];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+  const cat = selectedCategory();
+  const cards = deckCards();
+  return cat === 'all' ? cards : cards.filter((c) => c.category === cat);
 }
 
 /* =========================================================
@@ -142,6 +190,7 @@ function applyLeitner(card, known) {
   card.due = todayStr(INTERVALS[card.box - 1]);
 }
 
+// Eine gemeinsame Serie für alle Stapel – gelernt ist gelernt
 function updateStreak() {
   const today = todayStr();
   const { lastDate } = state.streak;
@@ -150,14 +199,13 @@ function updateStreak() {
   state.streak.lastDate = today;
 }
 
-// Die Serie zählt nur, wenn heute oder gestern gelernt wurde
 function currentStreak() {
   const { count, lastDate } = state.streak;
   return lastDate === todayStr() || lastDate === todayStr(-1) ? count : 0;
 }
 
 /* =========================================================
-   Elemente
+   Elemente & Navigation
    ========================================================= */
 const $ = (id) => document.getElementById(id);
 
@@ -173,13 +221,20 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
+function goHome() {
+  renderHome();
+  showView('home');
+}
+
 /* =========================================================
    Startseite
    ========================================================= */
 function renderHome() {
-  // Gewählte Kategorie existiert nicht mehr (z. B. alle Karten gelöscht)?
-  if (state.settings.category !== 'all' && !getCategories().includes(state.settings.category)) {
-    state.settings.category = 'all';
+  const deck = activeDeck();
+
+  // Gewählte Kategorie existiert nicht mehr (z. B. gelöscht)?
+  if (selectedCategory() !== 'all' && !getCategories().includes(selectedCategory())) {
+    state.settings.categories[deck.id] = 'all';
     saveState();
   }
 
@@ -202,15 +257,50 @@ function renderHome() {
   startBtn.disabled = pool.length === 0;
   startBtn.textContent = due.length > 0 ? `Lernen (${Math.min(due.length, SESSION_SIZE)})` : 'Freies Üben';
 
-  // Serie
   const streak = currentStreak();
   $('streak-count').textContent = streak;
   document.querySelector('.streak').classList.toggle('is-active', streak > 0);
 
-  renderBoxes(pool);
-  renderChips();
+  // Richtungs-Knöpfe mit der Flagge des Stapels beschriften
+  $('dir-foreign-de').textContent = `${deck.flag} → 🇩🇪`;
+  $('dir-de-foreign').textContent = `🇩🇪 → ${deck.flag}`;
   document.querySelectorAll('.toggle-btn').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.direction === state.settings.direction);
+  });
+
+  renderDeckSwitch();
+  renderBoxes(pool);
+  renderChips();
+  updateSpeechUI();
+}
+
+function renderDeckSwitch() {
+  const container = $('deck-switch');
+  container.innerHTML = '';
+  DECKS.forEach((deck) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'deck-btn';
+    btn.classList.toggle('is-active', deck.id === state.settings.deck);
+    btn.setAttribute('aria-pressed', deck.id === state.settings.deck);
+
+    const dueCount = state.cards.filter((c) => c.deck === deck.id && isDue(c)).length;
+    btn.textContent = `${deck.flag} ${deck.name}`;
+    if (dueCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'deck-badge';
+      badge.textContent = dueCount;
+      btn.append(badge);
+    }
+
+    btn.addEventListener('click', () => {
+      if (deck.id === state.settings.deck) return;
+      state.settings.deck = deck.id;
+      saveState();
+      renderHome();
+      checkImportFile();
+    });
+    container.append(btn);
   });
 }
 
@@ -250,9 +340,9 @@ function renderChips() {
     chip.type = 'button';
     chip.className = 'chip';
     chip.textContent = cat === 'all' ? '🔀 Alle gemischt' : cat;
-    chip.classList.toggle('is-active', state.settings.category === cat);
+    chip.classList.toggle('is-active', selectedCategory() === cat);
     chip.addEventListener('click', () => {
-      state.settings.category = cat;
+      state.settings.categories[state.settings.deck] = cat;
       saveState();
       renderHome();
     });
@@ -274,6 +364,7 @@ $('btn-start').addEventListener('click', () => {
 });
 
 $('btn-manage').addEventListener('click', () => {
+  $('search').value = '';
   renderManage();
   showView('manage');
 });
@@ -308,10 +399,15 @@ function startSession(practice) {
   renderCard();
 }
 
+function currentCard() {
+  return findCard(session.queue[session.index].id);
+}
+
 function renderCard() {
   const item = session.queue[session.index];
   const card = findCard(item.id);
-  const frFirst = state.settings.direction === 'fr-de';
+  const deck = activeDeck();
+  const ff = foreignFirst();
 
   const flashcard = $('flashcard');
   // Ohne Animation zurück auf die Vorderseite, damit die Lösung nicht aufblitzt
@@ -320,20 +416,20 @@ function renderCard() {
   void flashcard.offsetWidth; // Browser zwingen, den Zustand sofort zu übernehmen
   flashcard.classList.remove('no-transition');
 
-  $('front-lang').textContent = frFirst ? '🇫🇷' : '🇩🇪';
-  $('front-word').textContent = frFirst ? card.fr : card.de;
-  $('back-lang').textContent = frFirst ? '🇩🇪' : '🇫🇷';
-  $('back-word').textContent = frFirst ? card.de : card.fr;
+  $('front-lang').textContent = ff ? deck.flag : '🇩🇪';
+  $('front-word').textContent = ff ? card.front : card.back;
+  $('front-word').lang = ff ? deck.lang : 'de';
+  $('back-lang').textContent = ff ? '🇩🇪' : deck.flag;
+  $('back-word').textContent = ff ? card.back : card.front;
+  $('back-word').lang = ff ? 'de' : deck.lang;
 
-  $('card-meta').textContent = item.retry
-    ? '🔁 Wiederholung'
-    : `${card.category} · Fach ${card.box}`;
+  $('card-meta').textContent = item.retry ? '🔁 Wiederholung' : `${card.category} · Fach ${card.box}`;
 
   session.flipped = false;
   $('answer-buttons').classList.remove('is-visible');
   updateProgress();
   updateSpeakButton();
-  if (frFirst && state.settings.autoSpeak) speak(card.fr);
+  if (ff && state.settings.autoSpeak) speak(card.front);
 
   flashcard.classList.remove('enter');
   void flashcard.offsetWidth;
@@ -354,14 +450,10 @@ function flipCard() {
   if (!session.flipped) {
     session.flipped = true;
     $('answer-buttons').classList.add('is-visible');
-    // Bei DE → FR steht das Französische auf der Rückseite
-    if (state.settings.direction === 'de-fr' && state.settings.autoSpeak) speak(currentCard().fr);
+    // Bei Deutsch → Fremdsprache steht die Fremdsprache auf der Rückseite
+    if (!foreignFirst() && state.settings.autoSpeak) speak(currentCard().front);
     updateSpeakButton();
   }
-}
-
-function currentCard() {
-  return findCard(session.queue[session.index].id);
 }
 
 function answer(known) {
@@ -400,16 +492,14 @@ function answer(known) {
 $('flashcard').addEventListener('click', flipCard);
 $('btn-right').addEventListener('click', () => answer(true));
 $('btn-wrong').addEventListener('click', () => answer(false));
-
 $('btn-speak').addEventListener('click', () => {
-  if (session) speak(currentCard().fr);
+  if (session) speak(currentCard().front);
 });
 
 $('btn-quit').addEventListener('click', () => {
   stopSpeaking();
   session = null;
-  renderHome();
-  showView('home');
+  goHome();
 });
 
 // Tastatur-Steuerung am Rechner
@@ -425,7 +515,7 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowLeft') {
     answer(false);
   } else if (e.key.toLowerCase() === 's' && !$('btn-speak').hidden) {
-    speak(currentCard().fr);
+    speak(currentCard().front);
   }
 });
 
@@ -435,12 +525,13 @@ document.addEventListener('keydown', (e) => {
 function showResult() {
   const { correct, firstTries, practice } = session;
   const ratio = firstTries ? correct / firstTries : 0;
+  const [perfect, great, ok] = activeDeck().praise;
 
   let emoji = '💪';
   let title = 'Dranbleiben!';
-  if (ratio === 1) { emoji = '🏆'; title = 'Parfait !'; }
-  else if (ratio >= 0.8) { emoji = '🎉'; title = 'Très bien !'; }
-  else if (ratio >= 0.5) { emoji = '👍'; title = 'Pas mal !'; }
+  if (ratio === 1) { emoji = '🏆'; title = perfect; }
+  else if (ratio >= 0.8) { emoji = '🎉'; title = great; }
+  else if (ratio >= 0.5) { emoji = '👍'; title = ok; }
 
   $('result-emoji').textContent = emoji;
   $('result-title').textContent = title;
@@ -472,27 +563,26 @@ function launchConfetti() {
 }
 
 $('btn-continue').addEventListener('click', () => startSession(false));
-$('btn-home').addEventListener('click', () => {
-  renderHome();
-  showView('home');
-});
+$('btn-home').addEventListener('click', goHome);
 
 /* =========================================================
    Karten verwalten
    ========================================================= */
-// Für die Suche: Groß-/Kleinschreibung und Akzente ignorieren ("cafe" findet "café")
-const simplify = (text) => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
 function renderManage() {
+  const deck = activeDeck();
+  const cards = deckCards();
   const query = simplify($('search').value.trim());
   const list = $('card-list');
   list.innerHTML = '';
 
-  const matches = state.cards.filter((c) =>
-    !query || simplify(`${c.fr} ${c.de} ${c.category}`).includes(query));
+  const matches = cards.filter((c) =>
+    !query || simplify(`${c.front} ${c.back} ${c.category}`).includes(query));
 
-  $('card-total').textContent = `(${state.cards.length})`;
+  $('manage-flag').textContent = deck.flag;
+  $('card-total').textContent = `(${cards.length})`;
   $('empty-list').hidden = matches.length > 0;
+  $('csv-lang').textContent = deck.name;
+  $('csv-deck').textContent = `${deck.flag} ${deck.name}`;
 
   matches.forEach((card) => {
     const li = document.createElement('li');
@@ -500,46 +590,46 @@ function renderManage() {
 
     const text = document.createElement('div');
     text.className = 'card-item-text';
-    const fr = document.createElement('div');
-    fr.className = 'card-item-fr';
-    fr.textContent = card.fr;
-    const de = document.createElement('div');
-    de.className = 'card-item-de';
-    de.textContent = card.de;
+    const front = document.createElement('div');
+    front.className = 'card-item-front';
+    front.lang = deck.lang;
+    front.textContent = card.front;
+    const back = document.createElement('div');
+    back.className = 'card-item-back';
+    back.textContent = card.back;
     const meta = document.createElement('div');
     meta.className = 'card-item-meta';
     meta.textContent = `${card.category} · Fach ${card.box}`;
-    text.append(fr, de, meta);
+    text.append(front, back, meta);
 
     const actions = document.createElement('div');
     actions.className = 'card-item-actions';
     if (canSpeak()) {
-      const speakBtn = document.createElement('button');
-      speakBtn.type = 'button';
-      speakBtn.textContent = '🔊';
-      speakBtn.setAttribute('aria-label', `„${card.fr}“ vorlesen`);
-      speakBtn.addEventListener('click', () => speak(card.fr));
-      actions.append(speakBtn);
+      actions.append(iconButton('🔊', `„${card.front}“ vorlesen`, () => speak(card.front)));
     }
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.textContent = '✏️';
-    editBtn.setAttribute('aria-label', `„${card.fr}“ bearbeiten`);
-    editBtn.addEventListener('click', () => openDialog(card));
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.textContent = '🗑️';
-    delBtn.setAttribute('aria-label', `„${card.fr}“ löschen`);
-    delBtn.addEventListener('click', () => deleteCard(card));
-    actions.append(editBtn, delBtn);
+    actions.append(
+      iconButton('✏️', `„${card.front}“ bearbeiten`, () => openDialog(card)),
+      iconButton('🗑️', `„${card.front}“ löschen`, () => deleteCard(card)),
+    );
 
     li.append(text, actions);
     list.append(li);
   });
+
+  renderDeleteCategory();
+}
+
+function iconButton(icon, label, onClick) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = icon;
+  btn.setAttribute('aria-label', label);
+  btn.addEventListener('click', onClick);
+  return btn;
 }
 
 function deleteCard(card) {
-  if (!confirm(`Karte „${card.fr}“ wirklich löschen?`)) return;
+  if (!confirm(`Karte „${card.front}“ wirklich löschen?`)) return;
   state.cards = state.cards.filter((c) => c.id !== card.id);
   saveState();
   renderManage();
@@ -547,9 +637,32 @@ function deleteCard(card) {
 }
 
 $('search').addEventListener('input', renderManage);
-$('btn-back').addEventListener('click', () => {
-  renderHome();
-  showView('home');
+$('btn-back').addEventListener('click', goHome);
+
+/* ----- Kategorie löschen (z. B. um einen Import rückgängig zu machen) ----- */
+function renderDeleteCategory() {
+  const select = $('delete-category');
+  select.innerHTML = '';
+  getCategories().forEach((cat) => {
+    const option = document.createElement('option');
+    option.value = cat;
+    option.textContent = `${cat} (${deckCards().filter((c) => c.category === cat).length})`;
+    select.append(option);
+  });
+  $('btn-delete-category').disabled = select.options.length === 0;
+}
+
+$('btn-delete-category').addEventListener('click', () => {
+  const cat = $('delete-category').value;
+  if (!cat) return;
+  const deck = activeDeck();
+  const count = deckCards().filter((c) => c.category === cat).length;
+  if (!confirm(`Kategorie „${cat}“ mit ${count} Karten aus „${deck.name}“ löschen?\nDer Fortschritt dieser Karten geht verloren.`)) return;
+  state.cards = state.cards.filter((c) => !(c.deck === deck.id && c.category === cat));
+  saveState();
+  renderManage();
+  checkImportFile();
+  showToast(`${count} Karten gelöscht`);
 });
 
 /* ----- Dialog: anlegen / bearbeiten ----- */
@@ -557,11 +670,16 @@ const dialog = $('card-dialog');
 let editingId = null;
 
 function openDialog(card = null) {
+  const deck = activeDeck();
   editingId = card ? card.id : null;
-  $('dialog-title').textContent = card ? 'Karte bearbeiten' : 'Neue Karte';
-  $('input-fr').value = card ? card.fr : '';
-  $('input-de').value = card ? card.de : '';
-  $('input-category').value = card ? card.category : (state.settings.category !== 'all' ? state.settings.category : 'Eigene');
+  $('dialog-title').textContent = card ? 'Karte bearbeiten' : `Neue Karte ${deck.flag}`;
+  $('label-front').textContent = deck.name;
+  $('input-front').lang = deck.lang;
+  $('input-front').value = card ? card.front : '';
+  $('input-back').value = card ? card.back : '';
+  $('input-category').value = card
+    ? card.category
+    : (selectedCategory() !== 'all' ? selectedCategory() : 'Eigene');
 
   const datalist = $('category-list');
   datalist.innerHTML = '';
@@ -572,7 +690,7 @@ function openDialog(card = null) {
   });
 
   dialog.showModal();
-  $('input-fr').focus();
+  $('input-front').focus();
 }
 
 $('btn-add').addEventListener('click', () => openDialog());
@@ -580,17 +698,16 @@ $('btn-cancel').addEventListener('click', () => dialog.close());
 
 $('card-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  const fr = $('input-fr').value.trim();
-  const de = $('input-de').value.trim();
+  const front = $('input-front').value.trim();
+  const back = $('input-back').value.trim();
   const category = $('input-category').value.trim();
-  if (!fr || !de || !category) return;
+  if (!front || !back || !category) return;
 
   if (editingId) {
-    const card = findCard(editingId);
-    Object.assign(card, { fr, de, category }); // Fach und Fälligkeit bleiben erhalten
+    Object.assign(findCard(editingId), { front, back, category }); // Fach und Fälligkeit bleiben
     showToast('Karte gespeichert');
   } else {
-    state.cards.unshift(newCard(fr, de, category));
+    state.cards.unshift(newCard(state.settings.deck, front, back, category));
     showToast('Karte angelegt ✨');
   }
   saveState();
@@ -620,21 +737,31 @@ $('import-file').addEventListener('change', async (e) => {
   try {
     const imported = normalizeState(JSON.parse(await file.text()));
     if (!imported) throw new Error('Ungültiges Format');
-    if (!confirm(`${imported.cards.length} Karten importieren? Deine aktuellen Daten werden ersetzt.`)) return;
+    if (!confirm(`Backup mit ${imported.cards.length} Karten einspielen? Deine aktuellen Daten (alle Stapel) werden ersetzt.`)) return;
     state = imported;
     saveState();
     renderManage();
-    checkDuolingoFile();
+    checkImportFile();
     showToast('Backup importiert ✅');
   } catch (err) {
     showToast('⚠️ Diese Datei ist kein gültiges Backup');
   }
 });
 
-/* ----- CSV-Import (z. B. Wortliste aus Duolingo) ----- */
-const NEW_CARDS_PER_DAY = 20;                   // neue Karten werden auf mehrere Tage verteilt
-const DUOLINGO_FILE = 'vokabeln_franzoesisch.csv'; // liegt im selben Ordner wie index.html
+$('btn-reset').addEventListener('click', () => {
+  const deck = activeDeck();
+  if (!confirm(`Stapel „${deck.name}“ zurücksetzen?\nAlle Karten und der Fortschritt in diesem Stapel werden gelöscht und durch das Startpaket ersetzt. Andere Stapel bleiben unverändert.`)) return;
+  state.cards = state.cards.filter((c) => c.deck !== deck.id).concat(starterCards(deck));
+  state.settings.categories[deck.id] = 'all';
+  saveState();
+  renderManage();
+  checkImportFile();
+  showToast('Stapel zurückgesetzt');
+});
 
+/* =========================================================
+   CSV-Import (Datei auswählen oder Wortliste im Repo)
+   ========================================================= */
 // Zerlegt CSV-Text in Zeilen und Spalten. Versteht ; oder , als Trenner und "Anführungszeichen".
 function parseCSV(text) {
   text = text.replace(/^﻿/, ''); // Excel-BOM entfernen
@@ -676,18 +803,16 @@ function csvToCards(text, defaultCategory) {
   const rows = parseCSV(text)
     .map((r) => r.map((cell) => cell.trim()))
     .filter((r) => r.length >= 2 && r[0] && r[1]);
-  // Kopfzeile wie "Französisch;Deutsch" überspringen
-  if (rows.length && /franz|french|fran[cç]ais/i.test(rows[0][0])) rows.shift();
-  return rows.map(([fr, de, category]) => ({ fr, de, category: category || defaultCategory }));
+  // Kopfzeile wie "Französisch;Deutsch" oder "English;Deutsch" überspringen
+  if (rows.length && /^(deutsch|german|rückseite|back)$/i.test(rows[0][1])) rows.shift();
+  return rows.map(([front, back, category]) => ({ front, back, category: category || defaultCategory }));
 }
 
-// "le petit-déjeuner" und "Le petit déjeuner" gelten als dieselbe Karte
-const cardKey = (fr) => simplify(fr).replace(/[-\s]+/g, ' ').trim();
-
+// Dubletten werden nur innerhalb des aktiven Stapels geprüft
 function onlyNewCards(list) {
-  const known = new Set(state.cards.map((c) => cardKey(c.fr)));
+  const known = new Set(deckCards().map((c) => cardKey(c.front)));
   return list.filter((c) => {
-    const key = cardKey(c.fr);
+    const key = cardKey(c.front);
     if (known.has(key)) return false;
     known.add(key);
     return true;
@@ -695,6 +820,7 @@ function onlyNewCards(list) {
 }
 
 function importCards(list) {
+  const deck = activeDeck();
   const fresh = onlyNewCards(list);
   const skipped = list.length - fresh.length;
   if (fresh.length === 0) {
@@ -703,20 +829,20 @@ function importCards(list) {
   }
 
   const days = Math.ceil(fresh.length / NEW_CARDS_PER_DAY);
-  let message = `${fresh.length} neue Karten importieren?`;
+  let message = `${deck.flag} ${fresh.length} neue Karten in den Stapel „${deck.name}“ importieren?`;
   if (skipped) message += `\n${skipped} sind schon vorhanden und werden übersprungen.`;
   if (days > 1) message += `\n\nDamit es nicht zu viel auf einmal wird, werden sie über ${days} Tage verteilt (${NEW_CARDS_PER_DAY} pro Tag).`;
   if (!confirm(message)) return;
 
   fresh.forEach((c, i) => {
-    const card = newCard(c.fr, c.de, c.category);
+    const card = newCard(deck.id, c.front, c.back, c.category);
     card.due = todayStr(Math.floor(i / NEW_CARDS_PER_DAY));
     state.cards.push(card);
   });
   saveState();
   renderHome();
   if (!views.manage.hidden) renderManage();
-  checkDuolingoFile();
+  checkImportFile();
   showToast(`${fresh.length} Karten importiert ✅`);
 }
 
@@ -732,34 +858,31 @@ $('import-csv').addEventListener('change', async (e) => {
   importCards(cards);
 });
 
-// Liegt die Duolingo-Liste auf dem Server, bietet die Startseite den Import an
-let duolingoCards = [];
+// Liegt für den aktiven Stapel eine Wortliste im Repo, bietet die Startseite den Import an
+let fileCards = [];
 
-async function checkDuolingoFile() {
-  const banner = $('duolingo-import');
+async function checkImportFile() {
+  const deck = activeDeck();
+  const banner = $('file-import');
+  banner.hidden = true;
+  if (!deck.importFile) return;
   try {
-    const res = await fetch(DUOLINGO_FILE, { cache: 'no-store' });
+    const res = await fetch(deck.importFile, { cache: 'no-store' });
     if (!res.ok) throw new Error('nicht gefunden');
-    // Duolingo listet die neuesten Wörter zuerst – umdrehen, damit die Grundlagen vorne stehen
-    duolingoCards = csvToCards(await res.text(), 'Duolingo').reverse();
-    const count = onlyNewCards(duolingoCards).length;
-    $('duolingo-count').textContent = count;
+    const cards = csvToCards(await res.text(), deck.importCategory);
+    if (deck.importReversed) cards.reverse();
+    if (state.settings.deck !== deck.id) return; // Stapel wurde inzwischen gewechselt
+    fileCards = cards;
+    const count = onlyNewCards(cards).length;
+    $('file-import-title').textContent = `📥 Wortliste für ${deck.flag} ${deck.name} gefunden`;
+    $('file-import-count').textContent = count;
     banner.hidden = count === 0;
   } catch (err) {
-    banner.hidden = true; // z. B. lokal per Doppelklick geöffnet oder Datei nicht vorhanden
+    // z. B. lokal per Doppelklick geöffnet oder Datei nicht vorhanden – dann kein Hinweis
   }
 }
 
-$('btn-duolingo').addEventListener('click', () => importCards(duolingoCards));
-
-$('btn-reset').addEventListener('click', () => {
-  if (!confirm('Alle eigenen Karten und den gesamten Lernfortschritt löschen und mit dem Startpaket neu beginnen?')) return;
-  state = createInitialState();
-  saveState();
-  renderManage();
-  checkDuolingoFile();
-  showToast('Zurückgesetzt');
-});
+$('btn-file-import').addEventListener('click', () => importCards(fileCards));
 
 /* =========================================================
    Toast-Hinweis
@@ -777,38 +900,42 @@ function showToast(message) {
    Aussprache (Sprachausgabe des Browsers, keine externen Dienste)
    ========================================================= */
 const speechSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
-let frenchVoice = null;
+const voices = {}; // passende Stimme je Stapel, z. B. { fr: …, en: … }
 
 // Stimmen laden je nach Browser verzögert – deshalb auch auf "voiceschanged" hören
-function pickFrenchVoice() {
-  const voices = window.speechSynthesis.getVoices();
+function pickVoices() {
+  const all = window.speechSynthesis.getVoices();
   const lang = (v) => v.lang.replace('_', '-').toLowerCase();
-  frenchVoice = voices.find((v) => lang(v) === 'fr-fr')
-    || voices.find((v) => lang(v).startsWith('fr'))
-    || null;
+  DECKS.forEach((deck) => {
+    const preferred = deck.voiceLangs
+      .map((wanted) => all.find((v) => lang(v) === wanted))
+      .find(Boolean);
+    voices[deck.id] = preferred || all.find((v) => lang(v).startsWith(deck.lang)) || null;
+  });
   updateSpeechUI();
 }
 
-// Nur vorlesen, wenn eine französische Stimme da ist – sonst würde z. B. eine deutsche Stimme "bonjour" sprechen
+// Nur vorlesen, wenn eine passende Stimme da ist – sonst würde z. B. eine deutsche Stimme "bonjour" sprechen
 function canSpeak() {
-  return frenchVoice !== null;
+  return Boolean(voices[state.settings.deck]);
 }
 
-// Hinweise wie "(f)" oder "qn" sollen nicht mitgesprochen werden
+// Hinweise wie "(f)" sowie Abkürzungen wie "qn" oder "sth" nicht wörtlich vorlesen
 function toSpeechText(text) {
-  return text
-    .replace(/\([^)]*\)/g, '')
-    .replace(/\bqn\b/g, "quelqu'un")
-    .replace(/\s*\/\s*/g, ', ')
-    .trim();
+  let result = text.replace(/\([^)]*\)/g, '').replace(/\s*\/\s*/g, ', ');
+  Object.entries(activeDeck().abbreviations || {}).forEach(([short, long]) => {
+    result = result.replace(new RegExp(`\\b${short}\\b`, 'g'), long);
+  });
+  return result.trim();
 }
 
 function speak(text) {
-  if (!canSpeak()) return;
+  const voice = voices[state.settings.deck];
+  if (!voice) return;
   window.speechSynthesis.cancel(); // laufende Ausgabe abbrechen
   const utterance = new SpeechSynthesisUtterance(toSpeechText(text));
-  utterance.voice = frenchVoice;
-  utterance.lang = frenchVoice.lang;
+  utterance.voice = voice;
+  utterance.lang = voice.lang;
   utterance.rate = 0.9; // etwas langsamer – besser zum Mitlernen
   const btn = $('btn-speak');
   utterance.onstart = () => btn.classList.add('is-speaking');
@@ -821,36 +948,38 @@ function stopSpeaking() {
   $('btn-speak').classList.remove('is-speaking');
 }
 
-// Lautsprecher nur zeigen, wenn das Französische gerade sichtbar ist
+// Lautsprecher nur zeigen, wenn die Fremdsprache gerade sichtbar ist
 function updateSpeakButton() {
   const btn = $('btn-speak');
   if (!session || !canSpeak()) {
     btn.hidden = true;
     return;
   }
-  btn.hidden = !(state.settings.direction === 'fr-de' || session.flipped);
+  btn.hidden = !(foreignFirst() || session.flipped);
 }
 
 function updateSpeechUI() {
   $('autospeak-row').hidden = !canSpeak();
   $('autospeak').checked = state.settings.autoSpeak;
   updateSpeakButton();
-  if (!views.manage.hidden) renderManage();
 }
 
 $('autospeak').addEventListener('change', (e) => {
   state.settings.autoSpeak = e.target.checked;
   saveState();
-  if (e.target.checked) speak('Bonjour !'); // kurze Hörprobe
+  if (e.target.checked) speak(activeDeck().sample); // kurze Hörprobe
 });
 
 if (speechSupported) {
-  window.speechSynthesis.onvoiceschanged = pickFrenchVoice;
-  pickFrenchVoice();
+  window.speechSynthesis.onvoiceschanged = () => {
+    pickVoices();
+    if (!views.manage.hidden) renderManage();
+  };
+  pickVoices();
 }
 
 /* =========================================================
    Start
    ========================================================= */
 renderHome();
-checkDuolingoFile();
+checkImportFile();
